@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: 'handwritten-text-recognition-bucket'
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable SSH access'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: 't2.micro'
+      ImageId: 'ami-0ba9883b710b05ac6'
+      KeyName: 'text-recognition-kp'
+      SecurityGroupIds:
+        - Ref: InstanceSecurityGroup
+
+  ElasticBeanstalkApplication:
+    Type: 'AWS::ElasticBeanstalk::Application'
+    Properties:
+      ApplicationName: 'HandwrittenTextRecognitionApp'
+      Description: 'Elastic Beanstalk Application for Handwritten Text Recognition'
+
+  ElasticBeanstalkEnvironment:
+    Type: 'AWS::ElasticBeanstalk::Environment'
+    Properties:
+      EnvironmentName: 'HandwrittenTextRecognitionEnv'
+      ApplicationName: !Ref ElasticBeanstalkApplication
+      SolutionStackName: '64bit Amazon Linux 2023 v4.1.2 running Python 3.9'
+      OptionSettings:
+        - Namespace: 'aws:elasticbeanstalk:environment'
+          OptionName: 'EnvironmentType'
+          Value: 'SingleInstance'
+        - Namespace: 'aws:elasticbeanstalk:environment:process:default'
+          OptionName: 'HealthCheckPath'
+          Value: '/'
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: 'IamInstanceProfile'
+          Value: 'LabInstanceProfile'
+
+  APIGateway:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: 'HandwrittenTextRecognitionAPI'
+      Description: 'API Gateway for Handwritten Text Recognition Application'
+
+  ApiGatewayResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      ParentId: !GetAtt
+        - APIGateway
+        - RootResourceId
+      PathPart: 'flask'
+      RestApiId: !Ref APIGateway
+
+  ApiGatewayMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: 'NONE'
+      HttpMethod: 'ANY'
+      ResourceId: !Ref ApiGatewayResource
+      RestApiId: !Ref APIGateway
+      Integration:
+        IntegrationHttpMethod: 'POST'
+        Type: 'HTTP'
+        Uri: !Sub 'http://${ElasticBeanstalkEnvironment}.elasticbeanstalk.com'
+        IntegrationResponses:
+          - StatusCode: '200'
+      MethodResponses:
+        - StatusCode: '200'
+
+  ApiGatewayDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    Properties:
+      RestApiId: !Ref APIGateway
+      StageName: 'prod'
+    DependsOn:
+      - ApiGatewayMethod
+
+  GlueDatabase:
+    Type: 'AWS::Glue::Database'
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: 'handwritten_text_recognition_db'
+
+  GlueCrawler:
+    Type: 'AWS::Glue::Crawler'
+    Properties:
+      Role: 'LabRole'
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: 's3://handwritten-text-recognition-bucket/'
+      Name: 'HandwrittenTextRecognitionCrawler'
+      Schedule:
+        ScheduleExpression: 'cron(0/15 * * * ? *)'
+      SchemaChangePolicy:
+        UpdateBehavior: 'UPDATE_IN_DATABASE'
+        DeleteBehavior: 'LOG'
+
+  GlueJob:
+    Type: 'AWS::Glue::Job'
+    Properties:
+      Role: 'LabRole'
+      Command:
+        Name: 'glueetl'
+        ScriptLocation: 's3://handwritten-text-recognition-bucket/scripts/etl_script.py'
+        PythonVersion: '3'
+      DefaultArguments:
+        '--TempDir': 's3://handwritten-text-recognition-bucket/temp'
+        '--job-bookmark-option': 'job-bookmark-enable'
+      MaxRetries: 3
+      GlueVersion: '4.0'
+      NumberOfWorkers: 2  
+      WorkerType: 'Standard'  

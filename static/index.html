@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwritten Text Recognition</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Handwritten Text Recognition</h1>
+        <input type="file" id="fileInput">
+        <button id="uploadButton">Upload and Process</button>
+        <div id="loading" class="loading" style="display: none;">Processing...</div>
+        <div class="columns">
+            <div class="column">
+                <h2>Original Text</h2>
+                <pre id="originalText" class="output"></pre>
+            </div>
+            <div class="column">
+                <h2>Cleaned Text</h2>
+                <pre id="cleanedText" class="output"></pre>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
